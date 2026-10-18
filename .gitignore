@@ -1,0 +1,11 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 运行时数据（含 API key，勿提交）
+data/
+
+# 系统文件
+Thumbs.db
+.DS_Store
