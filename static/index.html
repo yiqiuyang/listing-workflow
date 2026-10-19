@@ -259,10 +259,11 @@ drop.addEventListener('drop', e => addFiles(e.dataTransfer.files));
 
 /* ---------- 生成 ---------- */
 const SEC_DEF = [
-  { key: 'title', name: '标题 Title', counter: t => `${t.length} 字符` },
-  { key: 'bullet_points', name: '五点描述 Bullet Points' },
+  { key: 'item_name', name: '商品名称 Item Name（2026 新规）', counter: t => `${t.length} / 75 字符` },
+  { key: 'item_highlights', name: '商品亮点 Item Highlights（2026 新规）', counter: t => `${t.length} / 125 字符` },
+  { key: 'bullet_points', name: '五点描述 Bullet Points（FBE 结构）' },
   { key: 'description', name: '产品描述 Description' },
-  { key: 'search_terms', name: '搜索词 Search Terms', counter: t => `${new Blob([t]).size} 字节 / 250` },
+  { key: 'search_terms', name: '搜索词 Search Terms', counter: t => `${new Blob([t]).size} / 250 字节` },
 ];
 
 function copyText(t, btn) {

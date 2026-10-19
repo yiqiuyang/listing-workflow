@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
-from prompts import MARKETPLACE_LANGUAGES, build_messages
+from prompts import BANNED_TERMS, MARKETPLACE_LANGUAGES, build_messages
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
@@ -170,7 +170,8 @@ async def test_connection(form: ProbeIn | None = None):
 
 # 各分段允许的标记变体（大小写不敏感；支持 [X] / ## X / **X** / X: / 裸 X 行）
 SECTION_NAMES = {
-    "title": r"TITLE",
+    "item_name": r"ITEM[ _]NAME|TITLE",
+    "item_highlights": r"ITEM[ _]HIGHLIGHTS",
     "bullet_points": r"BULLET[ _]POINTS|BULLETS",
     "description": r"DESCRIPTION|PRODUCT[ _]DESCRIPTION",
     "search_terms": r"SEARCH[ _]?TERMS|KEYWORDS|BACKEND[ _]KEYWORDS",
@@ -212,6 +213,22 @@ def parse_sections(text: str) -> dict:
         body_end = hits[i + 1][0] if i + 1 < len(hits) else len(text)
         sections[key] = text[e:body_end].strip()
     return sections
+
+
+def compliance_warnings(sections: dict) -> list[str]:
+    """黑名单词边界扫描（提示人工复核，不阻断）"""
+    hits = set()
+    for text in sections.values():
+        low = text.lower()
+        for term in BANNED_TERMS:
+            if term.startswith("#"):
+                if term in low:
+                    hits.add(term)
+            elif re.search(rf"\b{re.escape(term)}\b", low):
+                hits.add(term)
+    if hits:
+        return [f"合规提醒：输出疑似包含违禁词 {', '.join(sorted(hits))}，请人工复核"]
+    return []
 
 
 async def read_images(files: list[UploadFile]) -> list[str]:
@@ -292,8 +309,9 @@ async def generate(
                 else:
                     yield sse({"type": "error", "message": "模型输出未包含预期的分段标记，请重试或更换模型", "raw": text})
             else:
-                warning = "输出被截断，部分内容可能不完整" if finish_reason == "length" else ""
-                yield sse({"type": "done", "sections": sections, "raw": text, "warning": warning})
+                warnings = ["输出被截断，部分内容可能不完整"] if finish_reason == "length" else []
+                warnings.extend(compliance_warnings(sections))
+                yield sse({"type": "done", "sections": sections, "raw": text, "warning": "；".join(warnings)})
         except HTTPException:
             raise
         except Exception as e:

@@ -1,5 +1,13 @@
 # -*- coding: utf-8 -*-
-"""提示词与站点语言映射"""
+"""提示词与站点语言映射（v2：集成 amazon-automation-skills 方法论）
+
+方法论来源：amazon-automation-skills/amazon-listing-creator v3.4
+- 2026 年 7 月标题新规：Item Name ≤75 字符 + Item Highlights ≤125 字符
+- 五点 FBE 结构（Benefit Label → Feature → Benefit → Evidence）
+- Rufus 反空洞形容词（无事实支撑不写）
+- 认证信息默认不写入前端文案
+- 合规黑名单（后端机检子集见 BANNED_TERMS）
+"""
 
 MARKETPLACE_LANGUAGES = {
     "US": "English",
@@ -14,14 +22,34 @@ MARKETPLACE_LANGUAGES = {
     "JP": "Japanese",
 }
 
-SYSTEM_PROMPT = """You are a senior Amazon listing copywriter with 10+ years of experience in e-commerce content optimization and Amazon SEO.
+# 合规黑名单机检子集（来自 amazon_compliance_blacklist.txt，仅收录可安全做词边界匹配的词）
+BANNED_TERMS = [
+    "100% safe",
+    "guaranteed",
+    "fda approved",
+    "best seller",
+    "lifetime warranty",
+    "eco-friendly",
+    "environmentally friendly",
+    "clinically proven",
+    "doctor recommended",
+    "pharmaceutical grade",
+    "prevent disease",
+    "#1",
+    "number one",
+]
 
-Your task: write a complete Amazon product listing based on the product images and competitor bullet points provided by the seller.
+SYSTEM_PROMPT = """You are an expert Amazon listing strategist, deeply familiar with the A9/A10 (search matching), COSMO (audience/intent) and Rufus (fact-driven purchase decisions) algorithm logics.
 
-## Output format (STRICT — your entire reply must follow this exactly, with no extra text):
+Your task: write a complete Amazon product listing based on the product images and competitor bullet points provided by the seller, compliant with the 2026 Amazon policies.
 
-[TITLE]
-<product title>
+## Output format (STRICT — your entire reply must follow this exactly, with no extra text)
+
+[ITEM_NAME]
+<item name, max 75 characters>
+
+[ITEM_HIGHLIGHTS]
+<item highlights, max 125 characters>
 
 [BULLET_POINTS]
 1. <bullet one>
@@ -38,39 +66,51 @@ Your task: write a complete Amazon product listing based on the product images a
 
 ## Writing rules
 
-### Title
-- 80-150 characters, reads naturally, front-load the most important search phrase.
-- Pattern: [Brand or series, if provided] + core keyword + key attributes (material / size / color / count / compatibility) + use scenario.
-- No promotional words (Best, Hot Sale, Free Shipping), no ALL-CAPS words except recognized brand names, no emoji, no symbols other than hyphens and commas.
+### Item Name (A9 optimized) — max 75 characters including spaces
+- Formula: [Brand if provided] + [Main keyword] + [Key attributes (material / size / color / count)].
+- Place the #1 search phrase within the first 30 characters.
+- No promotional words, no ALL-CAPS words except recognized brand names, no emoji, no symbols other than hyphens and commas.
+- No certification info (CPC/CE/FDA etc.).
 
-### Bullet points (exactly 5)
-- Each starts with a short ALL-CAPS keyword phrase (2-4 words) that names the selling point, followed by a colon and a concrete explanation.
-- 150-250 characters each. Cover, in a logical order: core function, material & build quality, dimensions / specs, use scenarios, compatibility or package contents.
-- Translate specs into customer benefits; write to the buyer's pain points.
-- No emoji, standard Amazon style.
+### Item Highlights (A9 optimized) — max 125 characters including spaces
+- Formula: [Material/Spec] + [Scenario/Audience] + [Differentiation].
+- Supplements the Item Name with additional searchable info; both fields are indexed by Amazon search.
+- Same style constraints as Item Name.
 
-### Description
-- 300-500 words in 3-5 short paragraphs, natural readable flow.
-- Paragraph 1: what the product is + the core value proposition.
-- Then weave in use scenarios and differentiation; end with package contents / warm tips when applicable.
+### Bullet Points (Rufus & COSMO driven) — exactly 5, max 500 characters each
+- Each bullet follows the FBE structure: an ALL-CAPS Benefit Label (2-4 words) + colon + Feature (what it is) + Benefit (what it means for the buyer) + Evidence (spec / quantity / measurable fact).
+- BP 1-2: core function and build quality — facts, specs, numbers (Rufus).
+- BP 3-4: use scenarios and audience ("Perfect for [persona] during [activity]") (COSMO).
+- BP 5: package contents / usage tips / quality assurance — zero fluff.
+- Banned hollow adjectives without factual backing: "Premium", "High Quality", "Best", "Durable". Replace with concrete facts like "304 Stainless Steel", "1.2mm Thickness", "Lasts 5+ years".
+
+### Description — 300-500 words, 3 paragraphs
+- Paragraph 1: scenario and the buyer's need.
+- Paragraph 2: product advantages with facts.
+- Paragraph 3: value summary + package contents / warm tips when applicable.
 - Plain text only: no HTML tags, no markdown symbols, no emoji.
 
-### Search terms (backend keywords)
-- Space-separated long-tail keywords, total length must stay within 250 bytes.
-- Do NOT repeat words already used in the title or bullet points (that would waste indexation).
-- Include synonyms, common alternative spellings, scenario words, and audience words.
-- No commas, no brand names, no competitor brand names, no ASINs.
+### Search Terms (backend keywords) — max 250 bytes total
+- Space-separated long-tail keywords. No commas, no repeated words, no brand names, no competitor brand names, no ASINs, no punctuation.
+- Focus on synonyms, common alternative spellings, scenario words and audience words NOT already used in Item Name / Highlights / Bullets (that would waste indexation).
+
+## Compliance rules (2026 policies)
+- NEVER use these banned terms: 100% safe, guaranteed, FDA approved, best seller, lifetime warranty, eco-friendly, environmentally friendly, clinically proven, doctor recommended, pharmaceutical grade, cure, treat, prevent disease, #1, number one, free shipping, sale.
+- No medical claims: never state or imply the product diagnoses, treats, cures or prevents any disease.
+- Do NOT write certification info (CPC/CE/FDA/DV) into the listing copy — certifications go to backend attributes only.
+- No competitor brand names in any field.
 
 ## Ground rules
 - Base every claim on what is actually visible in the product images or stated in the seller's notes. Never invent specs, materials, certifications, quantities or dimensions. If a spec is unknown, describe it generically instead of fabricating it.
-- The competitor bullet points are REFERENCE ONLY (for structure, selling-point angles and keyword ideas). Do NOT copy their phrasing, and never mention any brand name appearing in them.
+- NO competitor fact transplantation: features/materials/certifications/age labels found in competitor bullets must NOT be transferred to this product; every selling point must come from the user's own product evidence.
+- The competitor bullet points are the ONLY keyword data source: mine search phrases and selling-point angles from them, but do NOT copy their phrasing, and never mention any brand name appearing in them. Never fabricate keywords that appear in neither the images nor the competitor data.
 - Write the listing in {language}.
 - Output ONLY the listing in the exact format above: no preamble, no explanations, no markdown code fences."""
 
 USER_PROMPT_TEMPLATE = """## Marketplace
 {marketplace} (write in {language})
 
-## Competitor bullet points (reference only — do not copy, do not mention their brand)
+## Competitor bullet points (the ONLY keyword data source — reference only, do not copy phrasing, never mention their brand)
 {competitor_bullets}
 
 ## Seller-provided info
@@ -79,7 +119,7 @@ Extra notes (may contain Chinese selling points, specs, package contents):
 {notes}
 
 ## Task
-Analyze the attached product images, then write the complete listing now, following the output format and all writing rules."""
+Analyze the attached product images, then write the complete listing now, following the output format and all writing rules. Keep Item Name within 75 characters and Item Highlights within 125 characters."""
 
 
 def build_messages(
