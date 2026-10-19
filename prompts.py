@@ -64,6 +64,16 @@ Your task: write a complete Amazon product listing based on the product images a
 [SEARCH_TERMS]
 <space separated search terms>
 
+[IMAGE_SUGGESTIONS]
+1. <main image suggestion>
+2. <secondary image suggestion 2>
+3. <secondary image suggestion 3>
+4. <secondary image suggestion 4>
+5. <secondary image suggestion 5>
+6. <secondary image suggestion 6>
+7. <secondary image suggestion 7>
+```
+
 ## Writing rules
 
 ### Item Name (A9 optimized) — max 75 characters including spaces
@@ -93,6 +103,11 @@ Your task: write a complete Amazon product listing based on the product images a
 ### Search Terms (backend keywords) — max 250 bytes total
 - Space-separated long-tail keywords. No commas, no repeated words, no brand names, no competitor brand names, no ASINs, no punctuation.
 - Focus on synonyms, common alternative spellings, scenario words and audience words NOT already used in Item Name / Highlights / Bullets (that would waste indexation).
+
+### Image Suggestions — exactly 7 lines
+- Line 1 is the MAIN image: white background, product fills 85% frame, key selling point annotation if needed.
+- Lines 2-7 are secondary images: cover usage scenarios, size/scale reference, material close-up, feature callouts, package contents, and lifestyle/audience shot.
+- Each line format: "Image type: what to show" (one short sentence each).
 
 ## Compliance rules (2026 policies)
 - NEVER use these banned terms: 100% safe, guaranteed, FDA approved, best seller, lifetime warranty, eco-friendly, environmentally friendly, clinically proven, doctor recommended, pharmaceutical grade, cure, treat, prevent disease, #1, number one, free shipping, sale.

@@ -8,12 +8,13 @@ from typing import Optional
 
 import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from prompts import BANNED_TERMS, MARKETPLACE_LANGUAGES, build_messages
+from excel_export import build_export_bytes, export_filename
 
 ROOT = Path(__file__).parent
 DATA_DIR = ROOT / "data"
@@ -183,6 +184,7 @@ SECTION_NAMES = {
     "bullet_points": r"BULLET[ _]POINTS|BULLETS",
     "description": r"DESCRIPTION|PRODUCT[ _]DESCRIPTION",
     "search_terms": r"SEARCH[ _]?TERMS|KEYWORDS|BACKEND[ _]KEYWORDS",
+    "image_suggestions": r"IMAGE[ _]SUGGESTIONS|MAIN[ _]IMAGE|IMAGE[ _]DESIGN",
 }
 
 
@@ -250,6 +252,35 @@ async def deepl_translate(texts: list[str], api_key: str) -> list[str]:
         )
         r.raise_for_status()
         return [t["text"] for t in r.json()["translations"]]
+
+
+class ExportIn(BaseModel):
+    sections: dict
+    zh: dict = {}
+    competitor_bullets: str = ""
+    product_name: str = ""
+
+
+@app.post("/api/export")
+async def export_excel(data: ExportIn):
+    """生成标准格式 Excel（6 列 6 模块 + 校验报告）"""
+    if not data.sections:
+        raise HTTPException(400, "没有可导出的生成结果")
+    try:
+        content = build_export_bytes(
+            data.sections, data.zh, data.competitor_bullets, data.product_name
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Excel 生成失败：{e}")
+    fname = export_filename(data.product_name)
+    return Response(
+        content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{fname}"',
+            "Content-Length": str(len(content)),
+        },
+    )
 
 
 async def read_images(files: list[UploadFile]) -> list[str]:
