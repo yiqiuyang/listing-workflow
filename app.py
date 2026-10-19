@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +34,7 @@ class ConfigIn(BaseModel):
     base_url: str
     api_key: str
     model: str
+    deepl_api_key: str = ""
 
 
 def load_config() -> dict:
@@ -71,6 +73,8 @@ def get_config():
         "model": cfg.get("model", ""),
         "api_key_masked": mask_key(cfg["api_key"]) if cfg.get("api_key") else "",
         "has_api_key": bool(cfg.get("api_key")),
+        "deepl_api_key_masked": mask_key(cfg["deepl_api_key"]) if cfg.get("deepl_api_key") else "",
+        "has_deepl_key": bool(cfg.get("deepl_api_key")),
         "marketplaces": list(MARKETPLACE_LANGUAGES.keys()),
     }
 
@@ -81,12 +85,16 @@ async def set_config(cfg_in: ConfigIn):
     api_key = cfg_in.api_key.strip()
     if api_key == "__KEEP__":  # 前端留空时保留旧 key
         api_key = old.get("api_key", "")
+    deepl_key = cfg_in.deepl_api_key.strip()
+    if deepl_key == "__KEEP__":
+        deepl_key = old.get("deepl_api_key", "")
     cfg = {
         "base_url": cfg_in.base_url.strip().rstrip("/"),
         "api_key": api_key,
         "model": cfg_in.model.strip(),
+        "deepl_api_key": deepl_key,
     }
-    if not all(cfg.values()):
+    if not (cfg["base_url"] and cfg["api_key"] and cfg["model"]):
         raise HTTPException(400, "base_url / api_key / model 均不能为空")
     save_config(cfg)
     return {"ok": True}
@@ -231,6 +239,19 @@ def compliance_warnings(sections: dict) -> list[str]:
     return []
 
 
+async def deepl_translate(texts: list[str], api_key: str) -> list[str]:
+    """DeepL API 批量翻译为简体中文（免费版 key 以 :fx 结尾）"""
+    host = "https://api-free.deepl.com" if api_key.endswith(":fx") else "https://api.deepl.com"
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{host}/v2/translate",
+            headers={"Authorization": f"DeepL-Auth-Key {api_key}"},
+            json={"text": texts, "target_lang": "ZH"},
+        )
+        r.raise_for_status()
+        return [t["text"] for t in r.json()["translations"]]
+
+
 async def read_images(files: list[UploadFile]) -> list[str]:
     if not files:
         raise HTTPException(400, "请至少上传一张商品图片")
@@ -312,6 +333,15 @@ async def generate(
                 warnings = ["输出被截断，部分内容可能不完整"] if finish_reason == "length" else []
                 warnings.extend(compliance_warnings(sections))
                 yield sse({"type": "done", "sections": sections, "raw": text, "warning": "；".join(warnings)})
+                # DeepL 中文对照（可选，失败不影响原文结果）
+                deepl_key = cfg.get("deepl_api_key", "")
+                if deepl_key and sections:
+                    keys = [k for k in sections if sections[k]]
+                    try:
+                        zh = await deepl_translate([sections[k] for k in keys], deepl_key)
+                        yield sse({"type": "translated", "sections": dict(zip(keys, zh))})
+                    except Exception as e:
+                        yield sse({"type": "translate_error", "message": f"DeepL 翻译失败：{e}"})
         except HTTPException:
             raise
         except Exception as e:

@@ -54,6 +54,7 @@
   .sec-title { font-weight: 600; font-size: 13px; }
   .sec-meta { font-size: 12px; color: var(--muted); margin-right: auto; margin-left: 10px; }
   .sec-body { padding: 12px 14px; font-size: 14px; white-space: pre-wrap; word-break: break-word; line-height: 1.65; }
+  .sec-zh { display: none; padding: 10px 14px 12px; margin: 0 14px 12px; border: 1px dashed #b8c4d6; border-radius: 8px; background: #f6f8fb; color: #5a6b7f; font-size: 13px; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
   .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
@@ -80,6 +81,8 @@
     <input type="password" id="apiKey" placeholder="sk-...">
     <label>模型名称（需支持图片输入）</label>
     <input type="text" id="model" list="modelList" placeholder="例如 glm-4.5v / qwen-vl-max / gpt-4o">
+    <label>DeepL API Key（可选，用于中文对照翻译）</label>
+    <input type="password" id="deeplKey" placeholder="免费版 key 以 :fx 结尾；留空则不翻译">
     <datalist id="modelList"></datalist>
     <div class="hint">三种均必填，保存在本地 data/config.json</div>
     <div style="margin-top:14px; display:flex; gap:10px;">
@@ -149,6 +152,8 @@ async function loadConfig() {
   $('model').value = cfg.model || '';
   $('apiKey').value = '';
   $('apiKey').placeholder = cfg.has_api_key ? `已保存 ${cfg.api_key_masked}（留空则不修改）` : 'sk-...';
+  $('deeplKey').value = '';
+  $('deeplKey').placeholder = cfg.has_deepl_key ? `已保存 ${cfg.deepl_api_key_masked}（留空则不修改）` : '免费版 key 以 :fx 结尾；留空则不翻译';
   const sel = $('marketplace');
   cfg.marketplaces.forEach(m => {
     const o = document.createElement('option');
@@ -168,9 +173,14 @@ $('saveCfgBtn').onclick = async () => {
     key = cfg.has_api_key ? '__KEEP__' : '';
     if (!key) { toast('请填写 API Key', false); return; }
   }
+  let deeplKey = $('deeplKey').value.trim();
+  if (!deeplKey) {
+    const cfg = await (await fetch('/api/config')).json();
+    deeplKey = cfg.has_deepl_key ? '__KEEP__' : '';
+  }
   const res = await fetch('/api/config', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ base_url: $('baseUrl').value, api_key: key, model: $('model').value })
+    body: JSON.stringify({ base_url: $('baseUrl').value, api_key: key, model: $('model').value, deepl_api_key: deeplKey })
   });
   if (res.ok) { toast('设置已保存'); $('settings').classList.remove('open'); await refreshKeyPlaceholder(); }
   else { const e = await res.json(); toast(e.detail || '保存失败', false); }
@@ -180,6 +190,8 @@ async function refreshKeyPlaceholder() {
   const cfg = await (await fetch('/api/config')).json();
   $('apiKey').value = '';
   $('apiKey').placeholder = cfg.has_api_key ? `已保存 ${cfg.api_key_masked}（留空则不修改）` : 'sk-...';
+  $('deeplKey').value = '';
+  $('deeplKey').placeholder = cfg.has_deepl_key ? `已保存 ${cfg.deepl_api_key_masked}（留空则不修改）` : '免费版 key 以 :fx 结尾；留空则不翻译';
 }
 
 // 测试/取列表用表单当前值（api_key 留空则后端回退已保存 key）
@@ -292,7 +304,9 @@ function renderSections(sections, raw) {
     const body = document.createElement('div');
     body.className = 'sec-body';
     body.textContent = text !== null ? text : '（本次未生成该部分）';
-    sec.appendChild(head); sec.appendChild(body);
+    const zh = document.createElement('div');
+    zh.className = 'sec-zh'; zh.id = `sec-zh-${def.key}`;
+    sec.appendChild(head); sec.appendChild(body); sec.appendChild(zh);
     box.appendChild(sec);
     if (text) idx++;
   }
@@ -374,6 +388,15 @@ function handleEvent(ev) {
     if (ev.warning) { setStatus('<span class="err">⚠ ' + ev.warning + '</span>'); toast(ev.warning, false); }
     else setStatus('<span class="ok">✓ 生成完成</span>');
     toast('生成完成');
+  } else if (ev.type === 'translated') {
+    for (const k in ev.sections) {
+      const el = $('sec-zh-' + k);
+      if (el) { el.textContent = ev.sections[k]; el.style.display = 'block'; }
+    }
+    setStatus('<span class="ok">✓ 生成完成（含中文对照）</span>');
+  } else if (ev.type === 'translate_error') {
+    toast(ev.message, false);
+    setStatus('<span class="ok">✓ 生成完成</span><span class="err">（翻译失败）</span>');
   } else if (ev.type === 'error') {
     setStatus(`<span class="err">出错：${ev.message}</span>`);
     toast(ev.message, false);
